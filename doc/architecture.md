@@ -8,57 +8,49 @@ This document outlines the detailed phase-wise architecture for building a facts
 ```mermaid
 graph TB
     subgraph "Frontend Layer"
-        UI[React UI Interface]
+        UI[Next.js 14 UI]
         Chat[Chat Component]
         Disclaimer[Disclaimer Footer]
     end
     
     subgraph "API Gateway"
-        LB[Load Balancer]
-        API[FastAPI Backend]
+        API[FastAPI Backend on Render]
     end
     
     subgraph "Core RAG System"
-        QC[Query Classifier]
-        RP[Response Processor]
-        LLM[LLM Integration]
+        QC[Query Classifier + Policy Guardrails]
+        RP[Response Pipeline]
+        LLM[Groq LLM - Llama 3.1 8B]
     end
     
     subgraph "Data Layer"
-        VDB[Vector Database]
+        VDB[Pure Python Vector Store]
         Sources[Official Sources]
-        Cache[Response Cache]
     end
     
     subgraph "External Sources"
         Groww[Groww Platform URLs]
     end
     
-    UI --> LB
+    UI --> API
     Chat --> API
     API --> QC
     QC --> VDB
     QC --> RP
     RP --> LLM
-    LLM --> Cache
     VDB --> Sources
     Sources --> Groww
-    
-    style UI fill:#e1f5fe
-    style API fill:#f3e5f5
-    style VDB fill:#e8f5e8
-    style Sources fill:#fff3e0
 ```
 
 ## Phase 1: Foundation Setup and Data Collection
 
 ### 1.1 Infrastructure Setup
-- **Backend Framework**: FastAPI or Flask (Python)
-- **Frontend Framework**: React with TypeScript
-- **Vector Database**: ChromaDB or FAISS
-- **LLM Integration**: OpenAI GPT-4 or Anthropic Claude
-- **Document Processing**: LangChain for RAG pipeline
-- **Deployment**: Docker containers with cloud hosting (AWS/Azure)
+- **Backend Framework**: FastAPI (Python 3.11+)
+- **Frontend Framework**: Next.js 14 with TypeScript
+- **Vector Database**: Pure Python VectorStore (JSON persistence, cosine similarity)
+- **LLM Integration**: Groq (Llama 3.1 8B Instant)
+- **Embeddings**: Lightweight hash-based bag-of-words (384 dimensions)
+- **Deployment**: Render (backend), Vercel (frontend), GitHub Actions (CI/CD)
 
 ### 1.2 Corpus Definition and Collection
 **Selected AMC**: HDFC Mutual Fund
@@ -99,12 +91,12 @@ flowchart TD
         Fetch[Fetch Groww Pages]
         Parse[Parse HTML Content]
         Validate[Data Validation]
-        Store[Store Raw Data]
+        Store[Store Raw Data as JSON]
     end
     
     subgraph "Error Handling"
         Retry[Retry Logic]
-        Fallback[Selenium Fallback]
+        Selenium[Selenium Fallback]
         Log[Error Logging]
     end
     
@@ -115,15 +107,11 @@ flowchart TD
     Validate --> Store
     
     Fetch -- HTTP Error --> Retry
-    Fetch -- Dynamic Content --> Fallback
+    Fetch -- Dynamic Content --> Selenium
     Retry --> Fetch
-    Fallback --> Parse
+    Selenium --> Parse
     Validate -- Invalid Data --> Log
     Log --> Fetch
-    
-    style Init fill:#e3f2fd
-    style Fetch fill:#e8f5e8
-    style Store fill:#f3e5f5
 ```
 
 **Implementation Details**:
@@ -138,7 +126,7 @@ flowchart TD
 ```mermaid
 flowchart LR
     subgraph "Data Cleaning"
-        Raw[Raw HTML Data]
+        Raw[Raw HTML / Dict Data]
         Clean[Text Cleaning]
         Normalize[Normalization]
         Extract[Field Extraction]
@@ -158,10 +146,6 @@ flowchart LR
     Validate --> Schema
     Schema --> Completeness
     Completeness --> Consistency
-    
-    style Clean fill:#ffebee
-    style Extract fill:#e8f5e8
-    style Validate fill:#f3e5f5
 ```
 
 **Processing Steps**:
@@ -188,7 +172,7 @@ flowchart TB
     subgraph "Financial Chunking Rules"
         Primary[400-600 tokens - Main Info]
         Metrics[200-300 tokens - Data Tables]
-        Overlap[120-150 tokens - Financial Context]
+        OverlapRule[120-150 tokens - Financial Context]
         Boundary[Financial Statement Boundaries]
         Category[Fund-Aware Segmentation]
     end
@@ -202,13 +186,9 @@ flowchart TB
     
     Split --> Primary
     Split --> Metrics
-    Split --> Overlap
+    Split --> OverlapRule
     Split --> Boundary
     Split --> Category
-    
-    style Input fill:#e3f2fd
-    style Chunk fill:#e8f5e8
-    style Output fill:#f3e5f5
 ```
 
 **Financial Data-Specific Chunking Strategy**:
@@ -248,86 +228,67 @@ flowchart TB
 #### 1.3.4 Embedding Generation
 ```mermaid
 flowchart LR
-    subgraph "Enhanced Embedding Pipeline"
+    subgraph "Lightweight Embedding Pipeline"
         Chunks[Text Chunks]
-        BGE[BGE-small-en Model]
-        Vectors[Vector Embeddings]
-        Normalize[Normalization]
-        Store[Vector Storage]
+        Hash[Hash-Based Vectorizer]
+        Vectors[384-dim Vectors]
+        Normalize[L2 Normalization]
+        Store[JSON Vector Storage]
     end
     
-    subgraph "BGE Configuration"
-        Model[BGE-small-en-v1.5]
+    subgraph "Embedding Configuration"
+        Model[lightweight-hash-embedder]
         Dim[384 Dimensions]
         Cosine[Cosine Similarity]
         Batch[Batch Processing]
-        Financial[Financial Fine-tuning]
     end
     
-    Chunks --> BGE
-    BGE --> Vectors
+    Chunks --> Hash
+    Hash --> Vectors
     Vectors --> Normalize
     Normalize --> Store
     
-    BGE --> Model
-    BGE --> Dim
+    Hash --> Model
+    Hash --> Dim
     Store --> Cosine
     Store --> Batch
-    BGE --> Financial
-    
-    style Chunks fill:#ffebee
-    style Vectors fill:#e8f5e8
-    style Store fill:#f3e5f5
 ```
 
-**Enhanced Embedding Configuration for Financial Data**:
+**Lightweight Hash-Based Embedding**:
 
 **Model Selection**:
-- **BGE-small-en-v1.5**: Bidirectional Gradient Encoder for financial text
-- **384 Dimensions**: Maintains compatibility with existing ChromaDB schema
-- **Bidirectional Architecture**: Better semantic understanding for financial concepts
-- **Financial Fine-tuning**: Optimized for mutual fund terminology
+- **lightweight-hash-embedder**: Pure Python hash-based bag-of-words vectorizer
+- **384 Dimensions**: Fixed-dimension vectors matching standard embedding size
+- **Hashed Bag-of-Words**: Words mapped to vector indices via MD5 hashing
+- **L2 Normalization**: Unit-length vectors for consistent cosine similarity
 
 **Embedding Pipeline**:
-- **Batch Processing**: Efficient processing of multiple chunks (32-64 chunks per batch)
-- **Vector Normalization**: L2 normalization for consistent similarity calculations
-- **Cosine Similarity**: Optimized for semantic search in financial domain
-- **Memory Optimization**: Efficient GPU/CPU usage for large document sets
+- **Text Preprocessing**: Lowercase, remove non-alphanumeric characters
+- **Word Frequency**: Log-scaled word counts for balanced term weighting
+- **Hash Mapping**: MD5 hash of each word determines vector index (mod 384)
+- **Batch Processing**: Efficient processing of multiple chunks per batch
+- **Zero Dependencies**: No PyTorch, SentenceTransformers, or HuggingFace Hub required
 
-**Financial Data Optimizations**:
-- **Domain-Specific Embeddings**: Enhanced understanding of financial terminology
-- **Context Preservation**: Better handling of financial relationships and comparisons
-- **Semantic Accuracy**: 20-30% improvement in financial query matching
-- **Fund-Specific Features**: Optimized for mutual fund concepts and metrics
-
-**Storage Integration**:
-- **ChromaDB Compatibility**: 384-dimensional vectors with existing schema
-- **Metadata Indexing**: Fund name, category, chunk type for filtering
-- **Similarity Search**: Cosine similarity optimized for financial queries
-- **Batch Insertion**: Efficient storage of multiple embeddings
-
-**Performance Characteristics**:
-- **Embedding Speed**: ~50ms per chunk (BGE-small)
-- **Memory Usage**: ~2GB for 10,000 chunks (384-dim vectors)
-- **Retrieval Accuracy**: 85-90% for financial queries
-- **Scalability**: Supports 100,000+ chunks with efficient search
+**Why This Approach**:
+- **CI/CD Friendly**: Runs in GitHub Actions without GPU or large model downloads
+- **No Native Code Crashes**: Avoids ChromaDB and ONNX compatibility issues
+- **Fast**: ~1ms per chunk embedding generation
+- **Deterministic**: Same text always produces the same vector
 
 #### 1.3.5 Vector Database Integration
 ```mermaid
 flowchart TD
-    subgraph "ChromaDB Integration"
+    subgraph "Pure Python Vector Store"
         Init[Initialize Collection]
-        Index[Create Index]
-        Insert[Insert Documents]
-        Metadata[Add Metadata]
-        Query[Query Interface]
+        Index[Build In-Memory Index]
+        Insert[Insert Documents + Embeddings]
+        Metadata[Store Metadata as JSON]
+        Query[Cosine Similarity Search]
     end
     
-    subgraph "Optimization"
-        Persist[Persistent Storage]
-        Cache[Query Caching]
-        Monitor[Performance Monitoring]
-        Backup[Regular Backups]
+    subgraph "Persistence"
+        JSON[JSON File Storage]
+        Backup[GitHub Artifacts Backup]
     end
     
     Init --> Index
@@ -335,30 +296,24 @@ flowchart TD
     Insert --> Metadata
     Metadata --> Query
     
-    Insert --> Persist
-    Query --> Cache
-    Insert --> Monitor
-    Persist --> Backup
-    
-    style Init fill:#e3f2fd
-    style Insert fill:#e8f5e8
-    style Query fill:#f3e5f5
+    Insert --> JSON
+    Query --> JSON
+    JSON --> Backup
 ```
 
 **Database Features**:
-- **Persistent Storage**: Local ChromaDB with automatic persistence
-- **Metadata Indexing**: Fast filtering by fund name and category
-- **Query Optimization**: Efficient vector similarity search
-- **Caching Layer**: Redis for frequent query caching
-- **Monitoring**: Track query performance and database health
-- **Backup Strategy**: Regular automated backups
+- **Pure Python Implementation**: No native dependencies (no ONNX, no chromadb binary)
+- **JSON Persistence**: Data stored in `vector_store/store.json`
+- **Cosine Similarity**: Brute-force similarity search with distance metric
+- **Metadata Storage**: Fund name, chunk type, source URL per document
+- **Drop-in Replacement**: `VectorStore` class wraps `VectorCollection` with same API as ChromaDB
 
 **Overall Pipeline Components**:
 - **Web Scraper**: BeautifulSoup + Selenium for Groww URLs
 - **Document Parser**: HTML processing with field extraction
 - **Text Chunker**: Semantic chunking with context preservation
-- **Embedding Model**: Sentence Transformers for vector generation
-- **Vector Store**: ChromaDB with metadata storage and indexing
+- **Embedding Model**: Hash-based bag-of-words vectorizer (384-dim)
+- **Vector Store**: Pure Python JSON store with cosine similarity search
 
 ### 1.4 Automated Data Scheduling
 
@@ -371,7 +326,7 @@ graph TB
     end
     
     subgraph "Data Pipeline"
-        SC[Scraper Container]
+        SC[Scraper]
         DP[Data Processor]
         VS[Vector Store Update]
         QC[Quality Checks]
@@ -392,15 +347,11 @@ graph TB
     QC --> Logs
     Logs --> Alerts
     Logs --> Success
-    
-    style GA fill:#f3e5f5
-    style SC fill:#e8f5e8
-    style VS fill:#e1f5fe
 ```
 
 **GitHub Actions Workflow Configuration**:
 - **Schedule**: Daily execution at 2:00 AM UTC (off-peak hours)
-- **Environment**: Docker container with all dependencies
+- **Environment**: Ubuntu runner with Python dependencies
 - **Triggers**: 
   - Scheduled cron job (daily)
   - Manual dispatch for on-demand updates
@@ -410,7 +361,7 @@ graph TB
 1. **Environment Setup**: Spin up container with scraping dependencies
 2. **Data Collection**: Scrape all 5 Groww URLs with rate limiting
 3. **Data Processing**: Clean, chunk, and generate embeddings
-4. **Vector Store Update**: Update ChromaDB with new data
+4. **Vector Store Update**: Update JSON vector store with new data
 5. **Quality Validation**: Verify data integrity and completeness
 6. **Backup**: Create backup of vector database
 7. **Notification**: Send success/failure alerts
@@ -439,8 +390,9 @@ on:
 
 **Environment Variables**:
 - `GROWW_BASE_URL`: Base URL for Groww mutual fund pages
-- `CHROMA_DB_HOST`: Vector database connection
-- `OPENAI_API_KEY`: Embedding generation API key
+- `GROQ_API_KEY`: Groq LLM API key for response generation
+- `PIPELINE_MIN_FUNDS`: Minimum funds required for validation
+- `PIPELINE_MIN_DOCUMENT_COUNT`: Minimum documents in vector store
 - `NOTIFICATION_WEBHOOK`: Alert notification endpoint
 
 ## Phase 2: Core RAG System Development
@@ -450,94 +402,93 @@ on:
 ```mermaid
 sequenceDiagram
     participant User
-    participant UI as Frontend UI
-    participant API as Backend API
-    participant QC as Query Classifier
-    participant VS as Vector Search
-    participant LLM as LLM Service
-    participant Cache as Response Cache
+    participant UI as Next.js Frontend
+    participant API as FastAPI Backend
+    participant Policy as Policy Guardrails
+    participant Retriever as Retriever
+    participant LLM as Groq LLM
     
     User->>UI: Submit Query
     UI->>API: POST /api/chat
-    API->>QC: Classify Query Type
+    API->>Policy: classify_query_policy()
     
     alt Factual Query
-        QC->>VS: Semantic Search
-        VS->>QC: Relevant Context
-        QC->>LLM: Generate Response
-        LLM->>QC: Formatted Answer
-        QC->>Cache: Store Response
-        QC->>API: Response + Source
+        Policy->>Retriever: Retrieve Context
+        Retriever->>Retriever: Detect fund + rerank
+        Retriever->>API: RetrievalResult
+        API->>LLM: Generate Response
+        LLM->>API: Formatted Answer
+        API->>UI: JSON Response + Source
     else Advisory Query
-        QC->>API: Refusal Message
+        Policy->>API: Refusal + Educational Link
+        API->>UI: Refusal Message
     else Performance Query
-        QC->>API: Redirect to Factsheet
+        Policy->>API: Redirect + Factsheet Link
+        API->>UI: Redirect Message
+    else Personal Info Query
+        Policy->>API: Refusal (no URL)
+        API->>UI: Safety Message
     end
     
-    API->>UI: JSON Response
     UI->>User: Display Answer
 ```
 
 **Key Components**:
-- **Query Preprocessor**: Normalize query, detect fund name + metric intent (expense ratio, exit load, SIP, NAV, risk, benchmark).
-- **Query Embedding (BGE)**: Embed the query using the **same embedding model as the corpus** (BGE-small-en-v1.5, 384-dim) to stay in the same vector space.
-- **Vector Search (ChromaDB)**: Retrieve top-\(k\) candidates using cosine similarity against stored embeddings.
-- **Metadata-Aware Routing**:
-  - If a fund name is detected in the query, **filter or boost** chunks with matching `fund_name`.
-  - If a metric intent is detected, **boost** chunk types most likely to contain the answer (e.g., `metric` chunks for expense ratio / SIP).
-- **Hybrid Reranker (Lightweight)**: Rerank retrieved candidates using a weighted score:
-  - Vector similarity (primary)
-  - Keyword overlap (secondary)
-  - Chunk-type / priority boosts (secondary)
-- **Context Assembler**: Deduplicate near-identical chunks, cap total context tokens, and preserve citations via `source_url`.
+- **Policy Guardrails** (`classify_query_policy`): Regex-based classifier that categorizes queries into `factual`, `advisory`, `performance`, or `personal_info` before any retrieval occurs.
+- **Query Preprocessor**: Normalizes query, detects fund name + metric intent (expense ratio, exit load, SIP, NAV, risk, benchmark, holdings, sector allocation).
+- **Query Embedding**: Embeds the query using the **same hash-based vectorizer as the corpus** (`_text_to_vector`, 384-dim) to stay in the same vector space.
+- **Vector Search**: Retrieve top-k candidates (k=30) using cosine similarity against stored embeddings in `VectorCollection`.
+- **Out-of-Scope Detection**: Regex patterns detect queries about funds not in the corpus (e.g., Axis, SBI, ICICI, Parag Parikh) and return early.
+- **Metadata-Aware Reranking**:
+  - If a fund name is detected, **filter** chunks to only matching `fund_name` metadata.
+  - If a metric intent is detected, **boost** matching `chunk_type` scores.
+  - Weighted score: vector similarity (75%) + lexical overlap (20%) + metadata boost (5%).
+- **Lexical Fallback**: If vector search fails, falls back to loading chunked JSON files and scoring via keyword overlap.
+- **Context Assembler**: Caps at top 6 chunks, preserves `source_url` for citations.
 
 **Why this strategy fits our current data**:
 - The corpus is small (5 Groww pages) but highly structured into financial chunk types; **metadata-aware reranking** improves precision without heavy infrastructure.
-- Since the vector DB stores **precomputed BGE embeddings**, embedding the query with BGE avoids mismatch and improves semantic retrieval for financial terms.
+- Since the vector store uses **precomputed hash-based embeddings**, embedding the query with the same `_text_to_vector` function avoids mismatch.
+- **Lexical fallback** ensures retrieval works even when the vector store is empty or the query doesn't match semantically.
 
 **Retrieval Defaults (tunable)**:
-- **Candidate fetch**: \(k=30\) then rerank → keep top \(n=6\)
-- **Fund routing**: if fund detected, enforce at least \(m=3\) results from that fund when available
+- **Candidate fetch**: k=30 then rerank → keep top n=6
+- **Fund routing**: if fund detected, filter to only chunks matching that `fund_name`
+- **Context sufficiency**: cosine similarity >= 0.35 (vector mode) or lexical overlap >= 0.10 (fallback mode)
 - **Chunk boosts**:
   - metric-intent → boost `chunk_type=metric`
-  - risk/benchmark-intent → boost `chunk_type=primary` + `chunk_type=metric`
-  - performance-intent → boost `chunk_type=performance` (but system may redirect per Phase 2.2)
+  - risk/benchmark-intent → boost `chunk_type=primary`
+  - performance-intent → boost `chunk_type=performance` (but policy guardrails may redirect)
 
 ### 2.2 Query Classification System
 
 ```mermaid
 graph TD
-    Query[User Query] --> Precheck[Policy Guardrails Precheck]
+    Query[User Query] --> Precheck[Policy Guardrails - classify_query_policy]
     
-    Precheck --> Personal{Personal / Sensitive Data Request?}
+    Precheck --> Personal{Personal / Sensitive Data?}
     Precheck --> Advisory{Advisory Query?}
     Precheck --> Performance{Performance Query?}
     Precheck --> Factual{Factual Query?}
     
-    Personal -->|Yes| RefusePII[Refuse + Safety Message]
+    Personal -->|Yes| RefusePII[Refuse + No URL]
     Advisory -->|Yes| Refuse[Refuse + Educational Link]
-    Performance -->|Yes| Redirect[Redirect to Official Factsheet]
+    Performance -->|Yes| Redirect[Redirect + Factsheet Link]
     Factual -->|Yes| Process[Retrieve + Generate]
     
     Process --> ValidateContext{Sufficient Context?}
-    ValidateContext -->|No| Unknown[Insufficient Context Response]
-    ValidateContext -->|Yes| Generate[Generate Response]
-    Generate --> Validate[Compliance Validation]
+    ValidateContext -->|No| Unknown[Insufficient Context - No URL]
+    ValidateContext -->|Yes| Generate[Generate Response via Groq LLM]
+    Generate --> Enforce[Enforce 3 Sentences + Footer]
+    Enforce --> Response[Final Response + Source URL]
     
     Refuse --> Educational[Single Educational Link]
     Redirect --> Official[Single Factsheet Link]
     
-    Validate --> Response[Final Response]
     Educational --> Response
     Official --> Response
     RefusePII --> Response
     Unknown --> Response
-    
-    style Process fill:#e8f5e8
-    style Refuse fill:#ffebee
-    style Redirect fill:#fff3e0
-    style RefusePII fill:#ffebee
-    style Unknown fill:#fff3e0
 ```
 
 **Categories**:
@@ -561,7 +512,13 @@ graph TD
    - OTPs
    - Email addresses or phone numbers
 
-**Response Guardrails (Phase 2.2 policy)**:
+**Regex-Based Policy** (`guardrails/policy.py`):
+- **ADVISORY_PATTERNS**: "should i invest", "recommend", "best fund", etc.
+- **PERFORMANCE_PATTERNS**: "returns", "CAGR", "outperform", etc.
+- **FACTUAL_OVERRIDE_PATTERNS**: NAV, expense ratio, exit load, SIP, AUM, benchmark, riskometer, holdings, sector allocation — these override performance patterns to allow factual metric queries.
+- **PERSONAL_INFO_PATTERNS**: PAN, Aadhaar, OTP, account number, IFSC, email, phone number.
+
+**Response Guardrails**:
 - **Clarity**: Response must be concise and understandable.
 - **Accuracy**: Use retrieved factual context only; no speculative answers.
 - **Compliance**: No advice/recommendations; no return calculations/comparisons.
@@ -570,39 +527,55 @@ graph TD
   - If the system **does not know the answer** (insufficient context), return a clear refusal **without attaching any URL**.
   - If query contains or requests **personal/sensitive information**, refuse and **do not attach any URL**.
 - **Formatting constraints**:
-  - Maximum 3 sentences.
-  - Footer: `Last updated from sources: <date>` for responses that include source-backed factual content.
+  - Maximum 3 sentences (enforced by `enforce_three_sentences`).
+  - URLs stripped from LLM output (enforced by `strip_urls`); source link attached separately in API response.
+  - Footer: `Last updated from sources: <date>` appended by `ResponseGenerationPipeline`.
 
 ### 2.3 Response Generation Pipeline
-**Prompt Engineering Template**:
+**LLM**: Groq (`llama-3.1-8b-instant`) via `GroqClient`
+
+**Prompt Engineering Template** (in `ResponseGenerationPipeline._build_prompt`):
 ```
-You are a facts-only mutual fund assistant. Answer using ONLY the provided context.
+You are a facts-only mutual fund assistant.
+Your job is to extract and state the specific fact the user asked about,
+using ONLY the information in the provided context.
+
 Rules:
-- Maximum 3 sentences
-- Include exactly one source link
-- Add footer: "Last updated from sources: <date>"
-- No investment advice or opinions
-- If context insufficient, politely refuse with educational link
+- Answer in a maximum of 3 sentences.
+- State the specific fact directly (e.g. 'The NAV of X is Y.').
+- Use only the numbers and facts from the context below.
+- Do NOT provide investment advice or opinions.
+- Do NOT say 'based on the context' or 'according to the context'.
+- Do NOT include any URLs in your answer.
 
 Context: {retrieved_context}
 Question: {user_query}
+Answer:
 ```
+
+**Post-Processing Pipeline** (`ResponseGenerationPipeline.generate_factual_response`):
+1. Call Groq LLM with constructed prompt
+2. Strip all URLs from LLM output (`strip_urls`)
+3. Enforce maximum 3 sentences (`enforce_three_sentences`)
+4. Append footer: `Last updated from sources: <date>`
 
 ## Phase 3: User Interface Development
 
 ### 3.1 Frontend Architecture
 **Technology Stack**:
-- React 18+ with TypeScript
+- Next.js 14 with TypeScript
 - TailwindCSS for styling
 - Axios for API communication
-- React Query for state management
+- TanStack React Query for state management
+- Lucide React for icons
+- clsx for conditional class names
 
 ### 3.2 Component Structure
 
 ```mermaid
 graph TB
     subgraph "App Component"
-        App[App.tsx]
+        App[page.tsx]
     end
     
     subgraph "Layout Components"
@@ -637,10 +610,6 @@ graph TB
     Chat --> MessageList
     Chat --> InputArea
     Chat --> SourceCitation
-    
-    style App fill:#e1f5fe
-    style Chat fill:#f3e5f5
-    style Welcome fill:#e8f5e8
 ```
 
 **Component Hierarchy**:
@@ -759,39 +728,26 @@ GET /api/sources
 graph TB
     subgraph "CI/CD & Scheduling"
         GA[GitHub Actions]
-        Scheduler[Daily Scheduler]
+        Scheduler[Daily Cron 2AM UTC]
         Pipeline[Data Pipeline]
     end
     
-    subgraph "Cloud Infrastructure"
-        subgraph "Frontend"
-            CDN[CDN - Vercel/Netlify]
-            Static[Static Assets]
-        end
-        
-        subgraph "Backend"
-            LB[Load Balancer]
-            API[API Gateway]
-            App1[App Server 1]
-            App2[App Server 2]
-            App3[App Server N]
-        end
-        
-        subgraph "Data Layer"
-            VDB[Vector Database]
-            Cache[Redis Cache]
-            Storage[Object Storage]
-        end
-        
-        subgraph "Monitoring"
-            Logs[Log Aggregation]
-            Metrics[Metrics Collection]
-            Alerts[Alert System]
-        end
+    subgraph "Frontend - Vercel"
+        CDN[Vercel CDN]
+        Static[Next.js Static Assets]
+    end
+    
+    subgraph "Backend - Render"
+        API[FastAPI Web Service]
+        App[Python Application]
+    end
+    
+    subgraph "Data Layer"
+        VDB[JSON Vector Store]
     end
     
     subgraph "External Services"
-        LLM[OpenAI/Anthropic]
+        LLM[Groq LLM API]
         Groww[Groww Platform]
     end
     
@@ -799,47 +755,22 @@ graph TB
     GA --> Pipeline
     Pipeline --> VDB
     
-    CDN --> LB
-    Static --> LB
-    LB --> API
-    API --> App1
-    API --> App2
-    API --> App3
+    CDN --> API
+    Static --> API
+    API --> App
     
-    App1 --> VDB
-    App1 --> Cache
-    App1 --> LLM
+    App --> VDB
+    App --> LLM
     
-    App2 --> VDB
-    App2 --> Cache
-    App2 --> LLM
-    
-    App3 --> VDB
-    App3 --> Cache
-    App3 --> LLM
-    
-    VDB --> Storage
     Groww --> Pipeline
-    
-    App1 --> Logs
-    App2 --> Logs
-    App3 --> Logs
-    Pipeline --> Logs
-    
-    Logs --> Metrics
-    Metrics --> Alerts
-    
-    style CDN fill:#e1f5fe
-    style VDB fill:#e8f5e8
-    style LLM fill:#f3e5f5
 ```
 
 **Infrastructure Components**:
-- **CI/CD & Scheduling**: GitHub Actions with daily cron jobs
-- **Frontend**: Static hosting (Vercel/Netlify)
-- **Backend**: Containerized API (Docker)
-- **Database**: Managed vector database
-- **CDN**: For static assets
+- **CI/CD & Scheduling**: GitHub Actions with daily cron jobs (2:00 AM UTC)
+- **Frontend**: Next.js 14 hosted on Vercel
+- **Backend**: FastAPI hosted on Render (Python Web Service)
+- **Database**: Pure Python JSON vector store (`vector_store/store.json`)
+- **LLM**: Groq API (Llama 3.1 8B Instant)
 
 ### 6.2 Monitoring and Analytics
 **Metrics to Track**:
@@ -896,24 +827,29 @@ graph TB
 ## Technology Stack Summary
 
 ### Backend
-- **Framework**: FastAPI
-- **RAG Pipeline**: LangChain
-- **Vector DB**: ChromaDB
-- **LLM**: OpenAI GPT-4
-- **Deployment**: Docker
+- **Framework**: FastAPI (Python 3.11+)
+- **RAG Pipeline**: Custom implementation (`ResponseGenerationPipeline`)
+- **Vector DB**: Pure Python VectorStore (JSON persistence, cosine similarity)
+- **Embeddings**: Hash-based bag-of-words vectorizer (384-dim, `_text_to_vector`)
+- **LLM**: Groq (Llama 3.1 8B Instant)
+- **Scraping**: BeautifulSoup4 + Selenium
+- **Query Classification**: Regex-based policy guardrails (`classify_query_policy`)
+- **Retrieval**: Metadata-aware reranking with lexical fallback
 
 ### Frontend
-- **Framework**: React 18 + TypeScript
+- **Framework**: Next.js 14 + TypeScript
 - **Styling**: TailwindCSS
-- **State**: React Query
+- **State**: TanStack React Query
+- **HTTP Client**: Axios
+- **Icons**: Lucide React
 - **Deployment**: Vercel
 
 ### Infrastructure
-- **Hosting**: AWS/Azure
-- **Database**: Managed ChromaDB
-- **Monitoring**: CloudWatch/Azure Monitor
-- **CI/CD**: GitHub Actions
+- **Backend Hosting**: Render (Python Web Service)
+- **Frontend Hosting**: Vercel (Next.js)
+- **CI/CD**: GitHub Actions (daily scraping cron + manual dispatch)
 - **Scheduling**: GitHub Actions Cron Jobs
+- **Vector Store Backup**: GitHub Actions Artifacts
 
 ## Success Metrics
 
@@ -980,11 +916,6 @@ graph LR
     OR1 --> MS7
     OR2 --> MS8
     OR3 --> MS9
-    
-    style TR1 fill:#ffebee
-    style CR1 fill:#fff3e0
-    style OR1 fill:#e8f5e8
-    style MS1 fill:#e1f5fe
 ```
 
 ### Technical Risks
