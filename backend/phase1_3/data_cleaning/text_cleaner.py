@@ -229,7 +229,7 @@ class TextCleaner:
         # Whitespace normalization
         if self.cleaning_rules['text_normalization']['whitespace_normalization']:
             # Replace multiple spaces with single space
-            normalized_text = re.sub(self.html_patterns['multiple_spaces'], ' ', normalized_text)
+            normalized_text = re.sub(self.text_patterns['multiple_spaces'], ' ', normalized_text)
             # Normalize line breaks
             normalized_text = re.sub(self.html_patterns['line_breaks'], ' ', normalized_text)
         
