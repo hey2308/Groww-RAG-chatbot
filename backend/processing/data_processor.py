@@ -1,9 +1,6 @@
-import pandas as pd
-import numpy as np
-from typing import List, Dict, Any
 import logging
-from sentence_transformers import SentenceTransformer
-import chromadb
+from typing import List, Dict, Any
+from database.vector_store import _text_to_vector
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -15,8 +12,6 @@ class DataProcessor:
         Initialize data processor with ChromaDB manager.
         """
         self.chroma_manager = chroma_manager
-        # Initialize sentence transformer for embeddings
-        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
         logger.info("Data processor initialized with embedding model")
     
     def process_fund_data(self, fund_data_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -194,13 +189,9 @@ class DataProcessor:
         Generate embeddings for text chunks.
         """
         try:
-            embeddings = self.embedding_model.encode(
-                texts,
-                convert_to_numpy=True,
-                normalize_embeddings=True
-            )
+            embeddings = [_text_to_vector(text) for text in texts]
             logger.info(f"Generated embeddings for {len(texts)} text chunks")
-            return embeddings.tolist()
+            return embeddings
         except Exception as e:
             logger.error(f"Error generating embeddings: {e}")
             return []

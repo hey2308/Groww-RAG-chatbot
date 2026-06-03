@@ -4,14 +4,11 @@ BGE-small-en Embedding Model for Financial Data
 """
 
 import logging
-import torch
 import numpy as np
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
-from sentence_transformers import SentenceTransformer
-import chromadb
-from chromadb.config import Settings
+from database.vector_store import _text_to_vector, DIM as EMBEDDING_DIM
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -22,8 +19,8 @@ class BGEConfig:
     """
     Configuration for BGE embedding model.
     """
-    model_name: str = "BAAI/bge-small-en-v1.5"
-    embedding_dim: int = 384
+    model_name: str = "lightweight-hash-embedder"
+    embedding_dim: int = EMBEDDING_DIM
     max_seq_length: int = 512
     batch_size: int = 32
     device: str = "auto"  # auto, cpu, cuda
@@ -72,39 +69,24 @@ class BGEEmbedder:
         try:
             # Step 1: Setup device
             if self.config.device == "auto":
-                self.device = "cuda" if torch.cuda.is_available() else "cpu"
-            else:
-                self.device = self.config.device
+                self.device = self.config.device if self.config.device != "auto" else "cpu"
             
             logger.info(f"Using device: {self.device}")
             
-            # Step 2: Load BGE model
-            logger.info(f"Loading BGE model: {self.config.model_name}")
+            # Step 2: Validate embedding function
+            logger.info(f"Using lightweight hash-based embeddings (dim={self.config.embedding_dim})")
             
-            self.model = SentenceTransformer(
-                self.config.model_name,
-                device=self.device,
-                cache_folder=self.config.cache_folder
-            )
-            
-            # Step 3: Validate model dimensions
-            model_dim = self.model.get_sentence_embedding_dimension()
-            if model_dim != self.config.embedding_dim:
-                logger.warning(f"Model dimension mismatch: expected {self.config.embedding_dim}, got {model_dim}")
-                # Update config to match actual model
-                self.config.embedding_dim = model_dim
-            
-            # Step 4: Test model with sample input
+            # Step 3: Test with sample input
             test_text = "HDFC Large Cap Fund Direct Growth"
-            test_embedding = self.model.encode([test_text])
+            test_embedding = _text_to_vector(test_text)
             
-            if test_embedding is not None and len(test_embedding) > 0:
-                logger.info(f"✅ BGE model initialized successfully")
-                logger.info(f"Test embedding shape: {test_embedding.shape}")
-                logger.info(f"Embedding dimension: {len(test_embedding[0])}")
+            if test_embedding is not None and len(test_embedding) == self.config.embedding_dim:
+                logger.info(f"✅ Embedding function initialized successfully")
+                logger.info(f"Embedding dimension: {len(test_embedding)}")
+                self.model = True  # Flag that we're ready
                 return True
             else:
-                logger.error("❌ BGE model test failed")
+                logger.error("❌ Embedding function test failed")
                 return False
                 
         except Exception as e:
@@ -166,12 +148,8 @@ class BGEEmbedder:
                 
                 # Generate embeddings for batch
                 batch_start_time = datetime.now()
-                batch_embeddings = self.model.encode(
-                    batch_texts,
-                    batch_size=self.config.batch_size,
-                    normalize_embeddings=self.config.normalize_embeddings,
-                    show_progress_bar=True
-                )
+                batch_embeddings = [_text_to_vector(text) for text in batch_texts]
+                batch_embeddings = np.array(batch_embeddings)
                 batch_end_time = datetime.now()
                 
                 batch_time = (batch_end_time - batch_start_time).total_seconds()
@@ -179,8 +157,8 @@ class BGEEmbedder:
                 
                 if batch_embeddings is not None:
                     # Convert to list if needed
-                    if isinstance(batch_embeddings, torch.Tensor):
-                        batch_embeddings = batch_embeddings.cpu().numpy()
+                    if hasattr(batch_embeddings, 'tolist'):
+                        batch_embeddings = np.array(batch_embeddings)
                     
                     all_embeddings.extend(batch_embeddings)
                     
