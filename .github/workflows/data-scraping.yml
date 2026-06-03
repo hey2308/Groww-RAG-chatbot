@@ -1,0 +1,173 @@
+name: Daily Data Scraping
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2:00 AM UTC
+  workflow_dispatch:  # Manual trigger for on-demand updates
+    inputs:
+      reason:
+        description: 'Reason for triggering the workflow'
+        required: false
+        default: 'Manual data update'
+
+env:
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.11'
+  PIPELINE_MIN_FUNDS: '5'
+  PIPELINE_MIN_SCRAPE_SUCCESS_RATE: '80'
+  PIPELINE_MIN_DOCUMENT_COUNT: '10'
+  PIPELINE_MIN_COMPLETENESS_SCORE: '70'
+  PIPELINE_MIN_QUALITY_SCORE: '60'
+
+jobs:
+  scrape-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Phase 1.3 pipeline (with validation and rollback)
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CHROMA_DB_HOST: ${{ secrets.CHROMA_DB_HOST }}
+          NOTIFICATION_WEBHOOK: ${{ secrets.NOTIFICATION_WEBHOOK }}
+        run: |
+          cd backend
+          python scripts/run_phase13_scheduled.py --report pipeline_run_report.json
+
+      - name: Upload pipeline report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-run-report
+          path: backend/pipeline_run_report.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Backup Vector Store
+        if: success()
+        run: |
+          cd backend
+          tar -czf vector_store_backup_$(date +%Y%m%d_%H%M%S).tar.gz vector_store/
+
+      - name: Upload backup artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vector-store-backup
+          path: backend/vector_store_backup_*.tar.gz
+          retention-days: 30
+
+      - name: Set up Node.js
+        if: github.ref == 'refs/heads/main' && success()
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Node.js dependencies
+        if: github.ref == 'refs/heads/main' && success()
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Deploy to Railway
+        if: github.ref == 'refs/heads/main' && success()
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          cd backend
+          npm install -g @railway/cli
+          railway login --token $RAILWAY_TOKEN
+          railway up --service=mutual-fund-api
+
+      - name: Deploy to Vercel
+        if: github.ref == 'refs/heads/main' && success()
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          cd frontend
+          npm install -g vercel
+          vercel --prod --token $VERCEL_TOKEN
+
+      - name: Send notification
+        if: always()
+        env:
+          NOTIFICATION_WEBHOOK: ${{ secrets.NOTIFICATION_WEBHOOK }}
+        run: |
+          if [ -z "$NOTIFICATION_WEBHOOK" ]; then
+            echo "NOTIFICATION_WEBHOOK not set; skipping"
+            exit 0
+          fi
+          if [ "${{ job.status }}" = "success" ]; then
+            curl -sf -X POST "$NOTIFICATION_WEBHOOK" \
+              -H "Content-Type: application/json" \
+              -d "{\"text\":\"Daily Phase 1.3 pipeline completed successfully\",\"status\":\"success\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
+              || echo "Notification webhook failed (non-fatal)"
+          else
+            curl -sf -X POST "$NOTIFICATION_WEBHOOK" \
+              -H "Content-Type: application/json" \
+              -d "{\"text\":\"Daily Phase 1.3 pipeline failed (validation or rollback)\",\"status\":\"failure\",\"workflow\":\"${{ github.workflow }}\",\"run_id\":\"${{ github.run_id }}\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
+              || echo "Notification webhook failed (non-fatal)"
+          fi
+
+      - name: Cleanup workspace
+        if: always()
+        run: |
+          rm -f backend/vector_store_backup_*.tar.gz
+          echo "Workspace cleaned up"
+
+  health-check:
+    runs-on: ubuntu-latest
+    needs: scrape-data
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Wait for deployment
+        run: sleep 60
+
+      - name: Health check
+        env:
+          API_URL: ${{ secrets.API_URL }}
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/api/health")
+          if [ "$response" = "200" ]; then
+            echo "API health check passed"
+          else
+            echo "API health check failed with status: $response"
+            exit 1
+          fi
+
+      - name: Test sources endpoint
+        env:
+          API_URL: ${{ secrets.API_URL }}
+        run: |
+          response=$(curl -s "$API_URL/api/sources")
+          if echo "$response" | grep -q "groww.in"; then
+            echo "Sources endpoint test passed"
+          else
+            echo "Sources endpoint test failed"
+            exit 1
+          fi

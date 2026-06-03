@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+venv/
+env/
+.venv/
+*.egg
+
+# Node
+node_modules/
+.next/
+out/
+.vercel/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ChromaDB / Vector Store data
+chroma_db/
+chroma_db_test/
+chroma_db_test2/
+backend/chroma_db/
+backend/vector_store/
+backend/chroma_db_rollback/
+backend/vector_store_rollback/
+
+# Scraped/chunked data (too large for GitHub)
+backend/backend/phase1_3/
+
+# Test artifacts
+backend/scripts/lightweight_embedder.py
+backend/test_final_*.txt
+frontend/tsconfig.tsbuildinfo
+
+# Reports & backups
+*.tar.gz
+backend/pipeline_run_report.json
