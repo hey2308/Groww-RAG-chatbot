@@ -93,6 +93,15 @@ class TextCleaner:
         """
         logger.info(f"Cleaning HTML content for: {url or 'unknown'}")
         
+        if soup is None:
+            logger.error("clean_html_content received None soup object")
+            return {
+                'original_length': 0,
+                'cleaned_length': 0,
+                'error': 'soup is None',
+                'cleaning_score': 0.0
+            }
+        
         cleaning_result = {
             'original_length': len(str(soup)),
             'cleaned_length': 0,

@@ -187,27 +187,63 @@ class DataCleaningImplementation:
     def _extract_text_content(self, scraped_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Extract text content from scraped data.
+        Reconstructs text from structured dict fields (the parser already extracted from HTML).
         """
-        # Look for HTML content in scraped data
+        # If we have a BeautifulSoup object, use it directly
         if 'content' in scraped_data and hasattr(scraped_data['content'], 'get_text'):
             return {
                 'type': 'html',
                 'soup': scraped_data['content'],
                 'text_length': len(scraped_data['content'].get_text())
             }
-        elif 'scraping_metadata' in scraped_data:
-            # Try to reconstruct from metadata
+
+        # Otherwise reconstruct text from structured fields
+        text_parts = []
+        for key in ['fund_name', 'fund_type', 'category', 'expense_ratio', 'exit_load',
+                     'min_sip', 'riskometer', 'benchmark', 'nav']:
+            value = scraped_data.get(key)
+            if value and value != 'Not available':
+                text_parts.append(f"{key.replace('_', ' ').title()}: {value}")
+
+        # Add returns if present
+        returns = scraped_data.get('returns', {})
+        if isinstance(returns, dict):
+            for period, value in returns.items():
+                if value and value != 'Not available':
+                    text_parts.append(f"Return {period}: {value}")
+
+        # Add asset allocation if present
+        allocation = scraped_data.get('asset_allocation', {})
+        if isinstance(allocation, dict):
+            for asset_type, value in allocation.items():
+                if value and value != 'Not available':
+                    text_parts.append(f"{asset_type.title()}: {value}")
+
+        # Add any extra text fields
+        for key, value in scraped_data.items():
+            if isinstance(value, str) and key not in ('source_url', 'scraped_at',
+                    'parsing_method', 'processing_status') and value not in text_parts:
+                text_parts.append(f"{key.replace('_', ' ').title()}: {value}")
+
+        reconstructed_text = "\n".join(text_parts)
+
+        if reconstructed_text:
+            from bs4 import BeautifulSoup
+            synthetic_soup = BeautifulSoup(
+                f"<html><body>{''.join(f'<p>{p}</p>' for p in text_parts)}</body></html>",
+                'html.parser'
+            )
             return {
-                'type': 'metadata',
-                'soup': None,
-                'text_length': len(str(scraped_data.get('fund_name', '')))
+                'type': 'reconstructed',
+                'soup': synthetic_soup,
+                'text_length': len(reconstructed_text)
             }
-        else:
-            return {
-                'type': 'unknown',
-                'soup': None,
-                'text_length': 0
-            }
+
+        return {
+            'type': 'unknown',
+            'soup': None,
+            'text_length': 0
+        }
     
     def _combine_cleaning_extraction_results(self, scraped_data: Dict[str, Any], 
                                        cleaning_result: Dict[str, Any], 
