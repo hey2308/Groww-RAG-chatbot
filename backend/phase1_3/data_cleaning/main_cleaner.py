@@ -293,7 +293,28 @@ class DataCleaningImplementation:
                                    validation_result: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create final cleaned data structure.
+        Merges original scraped fields (from parser) with field extractor output.
         """
+        # Start with original scraped data fields as base
+        original_fields = {}
+        for key in ['fund_name', 'fund_type', 'category', 'expense_ratio', 'exit_load',
+                     'min_sip', 'riskometer', 'benchmark', 'nav', 'returns',
+                     'asset_allocation', 'fund_details', 'scraped_at']:
+            if key in scraped_data:
+                original_fields[key] = scraped_data[key]
+
+        # Overlay extracted fields (from regex on cleaned text) where available
+        extracted_fields = combined_result.get('extraction_result', {}).get('extracted_fields', {})
+        merged_fields = {**original_fields}
+        for key, value in extracted_fields.items():
+            if value and value != 'Not available':
+                merged_fields[key] = value
+
+        # Ensure fund_name is set
+        fund_name = (merged_fields.get('fund_name')
+                     or scraped_data.get('fund_name')
+                     or 'Unknown')
+
         final_data = {
             # Original scraped data
             'original_data': scraped_data,
@@ -305,8 +326,8 @@ class DataCleaningImplementation:
                 'cleaning_actions': combined_result.get('cleaning_result', {}).get('cleaning_actions', [])
             },
             
-            # Extracted and cleaned fields
-            'fund_data': combined_result.get('extraction_result', {}).get('extracted_fields', {}),
+            # Merged fund data (original + extracted)
+            'fund_data': merged_fields,
             
             # Validation results
             'validation_result': validation_result,
@@ -316,7 +337,7 @@ class DataCleaningImplementation:
                 'text_quality_score': combined_result.get('cleaning_result', {}).get('cleaning_score', 0),
                 'extraction_confidence': combined_result.get('extraction_result', {}).get('extraction_confidence', 0),
                 'overall_quality_score': combined_result.get('data_quality_score', 0),
-                'data_completeness': self._calculate_data_completeness(combined_result.get('extraction_result', {}).get('extracted_fields', {}))
+                'data_completeness': self._calculate_data_completeness(merged_fields)
             },
             
             # Processing metadata
@@ -324,7 +345,7 @@ class DataCleaningImplementation:
                 'processed_at': datetime.now().isoformat(),
                 'processing_phase': '1.3.2',
                 'source_url': scraped_data.get('source_url', ''),
-                'fund_name': combined_result.get('extraction_result', {}).get('extracted_fields', {}).get('fund_name', 'Unknown')
+                'fund_name': fund_name
             }
         }
         

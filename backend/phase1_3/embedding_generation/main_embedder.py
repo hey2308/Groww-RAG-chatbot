@@ -240,6 +240,9 @@ class EmbeddingGenerationImplementation:
         Create final embedding data structure.
         """
         final_data = {
+            # Success flag for pipeline tracking
+            'success': len(enhanced_result.get('embeddings', [])) > 0,
+            
             # Original chunked data
             'original_chunked_data': chunked_data,
             
