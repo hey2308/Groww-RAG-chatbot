@@ -25,15 +25,15 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Cache pip dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
@@ -58,7 +58,7 @@ jobs:
 
       - name: Upload pipeline report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: pipeline-run-report
           path: backend/pipeline_run_report.json
@@ -73,7 +73,7 @@ jobs:
 
       - name: Upload backup artifact
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: vector-store-backup
           path: backend/vector_store_backup_*.tar.gz
@@ -81,7 +81,7 @@ jobs:
 
       - name: Set up Node.js
         if: github.ref == 'refs/heads/main' && success()
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
 
