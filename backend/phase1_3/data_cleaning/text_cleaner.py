@@ -206,10 +206,10 @@ class TextCleaner:
         cleaned_text = re.sub(self.text_patterns['junk_text'], '', cleaned_text)
         
         # Remove email addresses (privacy protection)
-        cleaned_text = re.sub(self.text_patterns['email_patterns'], '[EMAIL]', cleaned_text)
+        cleaned_text = re.sub(self.html_patterns['email_patterns'], '[EMAIL]', cleaned_text)
         
         # Remove URLs (might be navigation links)
-        cleaned_text = re.sub(self.text_patterns['url_patterns'], '[URL]', cleaned_text)
+        cleaned_text = re.sub(self.html_patterns['url_patterns'], '[URL]', cleaned_text)
         
         return cleaned_text.strip()
     
