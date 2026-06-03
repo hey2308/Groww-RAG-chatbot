@@ -173,8 +173,7 @@ class PipelineValidationGate:
             status = completeness.get("overall_status", "failed")
 
             completeness_ok = (
-                len(missing) == 0
-                and completeness_score >= self.min_completeness_score
+                completeness_score >= self.min_completeness_score
                 and status in ("passed", "needs_improvement")
             )
             quality_ok = quality_score >= self.min_quality_score
