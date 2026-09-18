@@ -18,7 +18,7 @@ class GroqClient:
         
         self.client = Groq(api_key=settings.groq_api_key)
         # Use a currently supported Groq model by default.
-        self.model = "qwen/qwen3.6-27b"
+        self.model = "qwen/qwen3.8-27b"
     
     def generate_response(self, prompt: str, max_tokens: int = 1000) -> str:
         """
