@@ -532,7 +532,7 @@ graph TD
   - Footer: `Last updated from sources: <date>` appended by `ResponseGenerationPipeline`.
 
 ### 2.3 Response Generation Pipeline
-**LLM**: Groq (`llama-3.1-8b-instant`) via `GroqClient`
+**LLM**: Groq (`qwen/qwen3.6-27b`) via `GroqClient`
 
 **Prompt Engineering Template** (in `ResponseGenerationPipeline._build_prompt`):
 ```
